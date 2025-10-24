@@ -1,0 +1,102 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Datasetra — CSV Studio</title>
+    <link rel="stylesheet" href="/static/css/styles.css" />
+  </head>
+  <body>
+    <div class="app wrap">
+      <!-- TOPBAR -->
+      <header class="topbar" role="banner" aria-label="Topbar">
+        <div class="brand" aria-live="polite">
+          <div class="logo" aria-hidden="true">DS</div>
+          <h1>Datasetra</h1>
+          <div id="fileMeta" class="chip-inline" style="display:none;"></div>
+        </div>
+
+        <nav class="topbar-nav" aria-label="Primary">
+          <a href="#table" aria-label="Go to Table">Table</a>
+          <a href="#charts" aria-label="Go to Charts">Charts</a>
+        </nav>
+
+        <div class="actions">
+          <input id="fileInput" type="file" accept=".csv,text/csv" hidden />
+
+          <div class="menu" id="menuImport">
+            <button class="btn primary" aria-haspopup="menu" aria-expanded="false" aria-label="Import menu">Import</button>
+            <div class="menu-popup" role="menu" aria-label="Import options">
+              <button class="menu-item" role="menuitem" data-import="csv">CSV</button>
+            </div>
+          </div>
+
+          <div class="menu" id="menuExport">
+            <button class="btn" aria-haspopup="menu" aria-expanded="false" aria-label="Export menu">Export</button>
+            <div class="menu-popup" role="menu" aria-label="Export options">
+              <button class="menu-item" role="menuitem" data-export="csv">CSV</button>
+              <button class="menu-item" role="menuitem" data-export="png">PNG</button>
+              <button class="menu-item" role="menuitem" data-export="svg">SVG</button>
+            </div>
+          </div>
+
+          <div class="menu" id="menuAccount">
+            <button class="btn ghost" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">Account</button>
+            <div class="menu-popup" role="menu" aria-label="Account options">
+              <button class="menu-item" role="menuitem" data-action="signin">Sign in</button>
+              <div class="menu-sep" aria-hidden="true"></div>
+              <button class="menu-item" role="menuitem" data-action="about">About</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- CONTENT (kept as-is for now) -->
+      <main class="content" role="main">
+        <section id="table" class="section" aria-labelledby="table-title">
+          <h2 id="table-title">Table</h2>
+          <div class="cards">
+            <div id="uploaderCard" class="card uploader" aria-label="CSV uploader">
+              <div class="uploader-inner">
+                <p class="uploader-title"><strong>Drop your CSV here</strong></p>
+                <p class="uploader-sub">or <label class="browse file-label">
+                  browse<input id="dropBrowse" type="file" accept=".csv,text/csv" />
+                </label> from your device</p>
+                <p class="hint">Only CSV files are supported. First row is treated as a header.</p>
+              </div>
+            </div>
+
+            <div id="tableCard" class="card table-card" style="display:none;">
+              <div class="table" role="table" aria-label="Data table">
+                <div id="tableHeader" class="table-header" role="rowgroup"></div>
+                <div id="tableBody" class="table-body" role="rowgroup" tabindex="0"></div>
+                <div id="tableFooter" class="table-footer" role="contentinfo"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="charts" class="section" aria-labelledby="charts-title">
+          <h2 id="charts-title">Charts</h2>
+          <div class="card placeholder" role="region" aria-label="Charts placeholder">
+            Charts placeholder — will render plots after charting module is connected.
+          </div>
+        </section>
+      </main>
+
+      <!-- FOOTER -->
+      <footer class="card footer" role="contentinfo">
+        <span>© <span id="year"></span> Datasetra — FastAPI + Jinja2.</span>
+      </footer>
+    </div>
+
+    <!-- Toast & Busy -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="busy" class="busy hidden" aria-hidden="true">
+      <div class="spinner" aria-label="Loading"></div>
+    </div>
+
+    <script src="/static/js/app.js" defer></script>
+  </body>
+</html>
