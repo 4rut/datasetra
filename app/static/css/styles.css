@@ -145,11 +145,34 @@ body{
   opacity:.65;font-size:11px;margin-left:6px
 }
 .row:nth-child(even) .cell{background:#0d1730}
+.table-empty{
+  padding:20px;
+  text-align:center;
+  color:var(--muted);
+  font-size:13px;
+}
 
 /* Footer */
 .table-footer{
-  display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:10px 12px;background:#0c1527;
+  display:flex;align-items:center;gap:12px;justify-content:space-between;
+  padding:10px 12px;background:#0c1527;flex-wrap:wrap;
 }
+.table-footer .footer-group{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.pager{display:inline-flex;align-items:center;gap:6px;}
+.pager button{
+  border:1px solid var(--border);background:transparent;color:var(--text);
+  padding:6px 10px;border-radius:10px;font-size:12px;cursor:pointer;
+}
+.pager button:hover:not(:disabled){background:rgba(255,255,255,.05);}
+.pager button:focus-visible{outline:3px solid var(--ring);outline-offset:2px;}
+.pager button:disabled{opacity:.4;cursor:not-allowed}
+.page-size{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+.page-size select{
+  background:#0d1730;color:var(--text);border:1px solid var(--border);
+  border-radius:8px;padding:6px 8px;font-size:12px;
+}
+.page-size select:focus-visible{outline:3px solid var(--ring);outline-offset:1px;}
+.table-footer-info{margin-left:auto;font-size:12px;color:var(--muted);}
 
 /* Toast & Busy */
 .toast{
@@ -214,6 +237,18 @@ body{
 }
 .menu-item:hover { background: rgba(255,255,255,.04); }
 .menu-sep { height:1px; background:#1a2742; margin:6px 0; opacity:.7; }
+.menu-empty{padding:8px 6px;font-size:12px;color:var(--muted);}
+
+.column-menu{
+  display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto;
+}
+.column-option{font-size:13px;}
+.column-option-label{
+  flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:10px;
+}
+.column-option-check{font-size:12px;opacity:.65;}
+.column-option[aria-checked="false"] .column-option-check{opacity:0;}
+.column-option:focus-visible{outline:3px solid var(--ring);outline-offset:2px;}
 
 .chip-inline {
   display:inline-flex; align-items:center; gap:8px;

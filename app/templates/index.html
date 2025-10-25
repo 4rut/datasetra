@@ -5,7 +5,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Datasetra — CSV Studio</title>
-    <link rel="stylesheet" href="/static/css/styles.css" />
+    {% set STATIC_VERSION = "2024-10-25" %}
+    <link rel="stylesheet" href="/static/css/styles.css?v={{ STATIC_VERSION }}" />
   </head>
   <body>
     <div class="app wrap">
@@ -38,6 +39,17 @@
               <button class="menu-item" role="menuitem" data-export="csv">CSV</button>
               <button class="menu-item" role="menuitem" data-export="png">PNG</button>
               <button class="menu-item" role="menuitem" data-export="svg">SVG</button>
+            </div>
+          </div>
+
+          <div class="menu" id="menuColumns">
+            <button class="btn" aria-haspopup="menu" aria-expanded="false" aria-label="Column visibility menu">
+              <span id="columnToggleLabel">Columns</span>
+            </button>
+            <div class="menu-popup" role="menu" aria-label="Column visibility options">
+              <div id="columnMenu" class="column-menu" role="group" aria-label="Columns"></div>
+              <div class="menu-sep" aria-hidden="true"></div>
+              <button class="menu-item" role="menuitem" data-action="show-all-columns">Show all columns</button>
             </div>
           </div>
 
@@ -97,6 +109,6 @@
       <div class="spinner" aria-label="Loading"></div>
     </div>
 
-    <script src="/static/js/app.js" defer></script>
+    <script src="/static/js/app.js?v={{ STATIC_VERSION }}" defer></script>
   </body>
 </html>
