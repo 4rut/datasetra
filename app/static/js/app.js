@@ -15,6 +15,31 @@ const state = {
   pageSize: 100,
   currentPage: 0,
   offset: 0,
+  chart: {
+    fileId: null,
+    allRows: null,
+    numericColumns: [],
+    instance: null,
+    selected: { type: 'line', x: null, y: null },
+    requestId: 0,
+  },
+};
+
+const CHART_MAX_ROWS = 2000;
+const CHART_MAX_POINTS = 800;
+
+const chartUI = {
+  initialized: false,
+  card: null,
+  empty: null,
+  emptyText: null,
+  defaultEmptyText: 'Upload a CSV file to explore charts.',
+  loading: null,
+  content: null,
+  typeSelect: null,
+  xSelect: null,
+  ySelect: null,
+  canvas: null,
 };
 
 function toast(msg, timeout=2400){
@@ -67,6 +92,495 @@ function initMenus(){
   document.addEventListener('click', closeAllMenus);
 }
 
+function initCharts(){
+  chartUI.card = $('#chartsCard');
+  if(!chartUI.card) return;
+  chartUI.empty = $('#chartsEmpty');
+  chartUI.loading = $('#chartsLoading');
+  chartUI.content = $('#chartsContent');
+  chartUI.typeSelect = $('#chartTypeSelect');
+  chartUI.xSelect = $('#chartXSelect');
+  chartUI.ySelect = $('#chartYSelect');
+  chartUI.canvas = $('#chartCanvas');
+  chartUI.emptyText = chartUI.empty ? chartUI.empty.querySelector('p') : null;
+  if(chartUI.emptyText){
+    const text = chartUI.emptyText.textContent ? chartUI.emptyText.textContent.trim() : '';
+    if(text){
+      chartUI.defaultEmptyText = text;
+    }
+  }
+  if(chartUI.typeSelect){
+    chartUI.typeSelect.addEventListener('change', () => {
+      state.chart.selected.type = chartUI.typeSelect.value || 'line';
+      renderChartFromState();
+    });
+  }
+  if(chartUI.xSelect){
+    chartUI.xSelect.addEventListener('change', () => {
+      state.chart.selected.x = chartUI.xSelect.value || null;
+      renderChartFromState();
+    });
+  }
+  if(chartUI.ySelect){
+    chartUI.ySelect.addEventListener('change', () => {
+      state.chart.selected.y = chartUI.ySelect.value || null;
+      renderChartFromState();
+    });
+  }
+  if(window.Chart){
+    Chart.defaults.color = '#e6eefc';
+    Chart.defaults.borderColor = 'rgba(255,255,255,.08)';
+    Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans"';
+    Chart.defaults.plugins.legend.labels.color = '#e6eefc';
+    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(4,10,20,.85)';
+    Chart.defaults.plugins.tooltip.titleColor = '#e6eefc';
+    Chart.defaults.plugins.tooltip.bodyColor = '#e6eefc';
+  }
+  chartUI.initialized = true;
+  resetChartState();
+}
+
+function setChartState(mode, message){
+  if(!chartUI.initialized) return;
+  if(chartUI.empty){
+    if(mode === 'empty'){
+      chartUI.empty.hidden = false;
+      if(chartUI.emptyText){
+        chartUI.emptyText.textContent = message || chartUI.defaultEmptyText;
+      }
+    }else{
+      chartUI.empty.hidden = true;
+      if(chartUI.emptyText){
+        chartUI.emptyText.textContent = chartUI.defaultEmptyText;
+      }
+    }
+  }
+  if(chartUI.loading){
+    chartUI.loading.hidden = mode !== 'loading';
+  }
+  if(chartUI.content){
+    chartUI.content.hidden = mode !== 'content';
+  }
+}
+
+function destroyChart(){
+  if(state.chart.instance && typeof state.chart.instance.destroy === 'function'){
+    state.chart.instance.destroy();
+  }
+  state.chart.instance = null;
+}
+
+function clearChartControls(){
+  if(chartUI.xSelect){
+    chartUI.xSelect.innerHTML = '';
+    chartUI.xSelect.disabled = true;
+  }
+  if(chartUI.ySelect){
+    chartUI.ySelect.innerHTML = '';
+    chartUI.ySelect.disabled = true;
+  }
+}
+
+function resetChartState(){
+  if(!chartUI.initialized) return;
+  destroyChart();
+  state.chart.fileId = null;
+  state.chart.allRows = null;
+  state.chart.numericColumns = [];
+  state.chart.selected = { type: 'line', x: null, y: null };
+  if(chartUI.typeSelect){
+    chartUI.typeSelect.value = 'line';
+  }
+  clearChartControls();
+  setChartState('empty');
+}
+
+function populateChartControls(){
+  if(!chartUI.initialized) return false;
+  if(chartUI.typeSelect){
+    const desiredType = state.chart.selected.type || chartUI.typeSelect.value || 'line';
+    chartUI.typeSelect.value = desiredType;
+    state.chart.selected.type = chartUI.typeSelect.value || 'line';
+  }
+  fillSelectOptions(chartUI.xSelect, state.columns, state.chart.selected.x);
+  fillSelectOptions(chartUI.ySelect, state.chart.numericColumns, state.chart.selected.y);
+
+  if(chartUI.xSelect){
+    chartUI.xSelect.disabled = !state.columns.length;
+    if(!chartUI.xSelect.disabled && !chartUI.xSelect.value && state.columns.length){
+      chartUI.xSelect.value = state.columns[0];
+    }
+  }
+  if(chartUI.ySelect){
+    chartUI.ySelect.disabled = !state.chart.numericColumns.length;
+    if(!chartUI.ySelect.disabled && !chartUI.ySelect.value && state.chart.numericColumns.length){
+      chartUI.ySelect.value = state.chart.numericColumns[0];
+    }
+  }
+
+  state.chart.selected.x = chartUI.xSelect && chartUI.xSelect.value ? chartUI.xSelect.value : null;
+  state.chart.selected.y = chartUI.ySelect && chartUI.ySelect.value ? chartUI.ySelect.value : null;
+  return chartUI.ySelect ? !chartUI.ySelect.disabled : false;
+}
+
+function fillSelectOptions(selectEl, options, preferred){
+  if(!selectEl) return;
+  const prev = preferred ?? selectEl.value;
+  selectEl.innerHTML = '';
+  options.forEach(option => {
+    const opt = document.createElement('option');
+    opt.value = option;
+    opt.textContent = option;
+    selectEl.appendChild(opt);
+  });
+  if(prev && options.includes(prev)){
+    selectEl.value = prev;
+  }else if(options.length){
+    selectEl.selectedIndex = 0;
+  }
+  selectEl.disabled = !options.length;
+}
+
+function parseNumeric(value){
+  if(value === null || value === undefined) return null;
+  if(typeof value === 'number'){
+    return Number.isFinite(value) ? value : null;
+  }
+  if(typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if(!trimmed) return null;
+  const compact = trimmed.replace(/\u00a0/g, '').replace(/\s+/g, '');
+  const euroPattern = /^-?\d{1,3}(\.\d{3})*(,\d+)?$/;
+  const usPattern = /^-?\d{1,3}(,\d{3})*(\.\d+)?$/;
+  let normalized = compact;
+  if(euroPattern.test(compact)){
+    normalized = compact.replace(/\./g, '').replace(',', '.');
+  }else if(usPattern.test(compact)){
+    normalized = compact.replace(/,/g, '');
+  }else if(compact.includes(',') && !compact.includes('.')){
+    normalized = compact.replace(/,/g, '.');
+  }else{
+    normalized = compact.replace(/,/g, '');
+  }
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+function detectNumericColumns(rows){
+  const columns = state.columns || [];
+  if(!rows || !rows.length || !columns.length) return [];
+  const sampleSize = Math.min(rows.length, 500);
+  const numericCols = [];
+  columns.forEach(column => {
+    let valueCount = 0;
+    let numericCount = 0;
+    for(let i = 0; i < sampleSize; i++){
+      const raw = rows[i]?.[column];
+      if(raw === undefined || raw === null) continue;
+      const str = typeof raw === 'string' ? raw.trim() : String(raw).trim();
+      if(!str.length) continue;
+      valueCount += 1;
+      if(parseNumeric(raw) !== null){
+        numericCount += 1;
+      }
+    }
+    if(!valueCount){
+      return;
+    }
+    const threshold = valueCount < 5 ? valueCount : Math.ceil(valueCount * 0.6);
+    if(numericCount >= Math.max(1, threshold)){
+      numericCols.push(column);
+    }
+  });
+  return numericCols;
+}
+
+async function fetchAllRowsForCharts(requestId){
+  const rows = [];
+  let offset = 0;
+  const limit = 1000;
+  let total = null;
+  while(rows.length < CHART_MAX_ROWS){
+    if(state.chart.requestId !== requestId) return null;
+    const remaining = CHART_MAX_ROWS - rows.length;
+    const payload = {
+      file_id: state.fileId,
+      query: null,
+      columns: null,
+      sort_by: state.sortBy,
+      sort_dir: state.sortDir,
+      limit: Math.min(limit, Math.max(1, remaining)),
+      offset
+    };
+    const resp = await fetch('/api/filter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if(state.chart.requestId !== requestId) return null;
+    if(!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    const batch = Array.isArray(data.rows) ? data.rows : [];
+    rows.push(...batch);
+    offset += batch.length;
+    if(typeof data.total === 'number'){
+      total = data.total;
+    }
+    if(batch.length < payload.limit){
+      break;
+    }
+    if(total !== null && offset >= total){
+      break;
+    }
+  }
+  return rows;
+}
+
+async function refreshCharts(options={}){
+  if(!chartUI.initialized) return;
+  if(!state.fileId){
+    resetChartState();
+    return;
+  }
+  const { force = false } = options;
+  const hasCached = !force && state.chart.fileId === state.fileId && Array.isArray(state.chart.allRows);
+  if(hasCached){
+    populateChartControls();
+    renderChartFromState();
+    return;
+  }
+  const previousSelection = { ...state.chart.selected };
+  clearChartControls();
+  setChartState('loading');
+  const requestId = ++state.chart.requestId;
+  try{
+    const rows = await fetchAllRowsForCharts(requestId);
+    if(rows === null || state.chart.requestId !== requestId){
+      return;
+    }
+    if(!rows.length){
+      state.chart.fileId = state.fileId;
+      state.chart.allRows = [];
+      state.chart.numericColumns = [];
+      state.chart.selected = previousSelection;
+      clearChartControls();
+      destroyChart();
+      setChartState('empty', 'No rows available for charting.');
+      return;
+    }
+    state.chart.fileId = state.fileId;
+    state.chart.allRows = rows;
+    state.chart.numericColumns = detectNumericColumns(rows);
+    state.chart.selected = {
+      type: previousSelection.type || (chartUI.typeSelect ? chartUI.typeSelect.value || 'line' : 'line'),
+      x: previousSelection.x,
+      y: previousSelection.y
+    };
+    const hasNumeric = populateChartControls();
+    if(!hasNumeric){
+      destroyChart();
+      setChartState('empty', 'Charts require at least one numeric column.');
+      return;
+    }
+    renderChartFromState();
+  }catch(err){
+    if(state.chart.requestId !== requestId){
+      return;
+    }
+    console.error(err);
+    destroyChart();
+    setChartState('empty', 'Failed to load chart data.');
+  }
+}
+
+function prepareChartDataset(type, xColumn, yColumn){
+  const rows = state.chart.allRows || [];
+  if(type === 'scatter'){
+    const points = [];
+    for(let i = 0; i < rows.length && points.length < CHART_MAX_POINTS; i++){
+      const row = rows[i] || {};
+      const yVal = parseNumeric(row[yColumn]);
+      if(yVal === null) continue;
+      const xVal = xColumn ? parseNumeric(row[xColumn]) : parseNumeric(i + 1);
+      if(xVal === null) continue;
+      points.push({ x: xVal, y: yVal });
+    }
+    return { points };
+  }
+  const labels = [];
+  const values = [];
+  for(let i = 0; i < rows.length && values.length < CHART_MAX_POINTS; i++){
+    const row = rows[i] || {};
+    const yVal = parseNumeric(row[yColumn]);
+    if(yVal === null) continue;
+    let label;
+    if(xColumn){
+      const rawX = row[xColumn];
+      if(rawX === undefined || rawX === null){
+        label = `Row ${i + 1}`;
+      }else{
+        const str = String(rawX).trim();
+        label = str.length ? str : `Row ${i + 1}`;
+      }
+    }else{
+      label = `Row ${i + 1}`;
+    }
+    labels.push(label);
+    values.push(yVal);
+  }
+  return { labels, values };
+}
+
+function buildChartConfig(type, dataset, xLabel, yLabel){
+  const axisLabelX = xLabel || 'Row';
+  const axisLabelY = yLabel || 'Value';
+  const axisColor = '#9fb0cc';
+  const gridColor = 'rgba(255,255,255,.06)';
+  if(type === 'scatter'){
+    return {
+      type: 'scatter',
+      data: {
+        datasets: [{
+          label: `${axisLabelY} vs ${axisLabelX}`,
+          data: dataset.points,
+          borderColor: 'rgba(0,194,255,0.9)',
+          backgroundColor: 'rgba(0,194,255,0.35)',
+          pointRadius: dataset.points.length > 80 ? 2 : 4,
+          pointHoverRadius: 5
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#e6eefc' } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const { x, y } = ctx.parsed || {};
+                return `(${x}, ${y})`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            title: { display: true, text: axisLabelX, color: axisColor },
+            ticks: { color: axisColor },
+            grid: { color: gridColor }
+          },
+          y: {
+            title: { display: true, text: axisLabelY, color: axisColor },
+            ticks: { color: axisColor },
+            grid: { color: gridColor }
+          }
+        }
+      }
+    };
+  }
+  const isBar = type === 'bar';
+  const datasetConfig = {
+    label: axisLabelY,
+    data: dataset.values,
+    borderColor: 'rgba(0,194,255,0.9)',
+    backgroundColor: isBar ? 'rgba(0,194,255,0.45)' : 'rgba(0,194,255,0.28)',
+    pointRadius: dataset.values.length > 120 ? 0 : 2,
+    pointHoverRadius: 4,
+    tension: isBar ? 0 : 0.25,
+    fill: false,
+  };
+  if(isBar){
+    datasetConfig.borderRadius = 6;
+  }
+  return {
+    type: isBar ? 'bar' : 'line',
+    data: {
+      labels: dataset.labels,
+      datasets: [datasetConfig]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#e6eefc' } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const val = ctx.parsed?.y ?? ctx.parsed;
+              return `${axisLabelY}: ${val}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: axisLabelX, color: axisColor },
+          ticks: { color: axisColor, maxRotation: 45, minRotation: 0, autoSkip: true },
+          grid: { color: gridColor }
+        },
+        y: {
+          title: { display: true, text: axisLabelY, color: axisColor },
+          ticks: { color: axisColor },
+          grid: { color: gridColor }
+        }
+      }
+    }
+  };
+}
+
+function renderChartFromState(){
+  if(!chartUI.initialized) return;
+  if(!state.fileId){
+    resetChartState();
+    return;
+  }
+  if(!state.chart.allRows || !state.chart.allRows.length){
+    destroyChart();
+    setChartState('empty', 'No data available for charting.');
+    return;
+  }
+  if(typeof Chart === 'undefined'){
+    console.error('Chart.js library is not available; cannot render chart.');
+    destroyChart();
+    setChartState('empty', 'Charting library failed to load.');
+    return;
+  }
+  const type = (chartUI.typeSelect && chartUI.typeSelect.value) || state.chart.selected.type || 'line';
+  const xColumn = chartUI.xSelect && chartUI.xSelect.value ? chartUI.xSelect.value : null;
+  const yColumn = chartUI.ySelect && chartUI.ySelect.value ? chartUI.ySelect.value : null;
+  state.chart.selected = { type, x: xColumn, y: yColumn };
+  if(!yColumn){
+    destroyChart();
+    setChartState('empty', 'Select a numeric column for the Y axis.');
+    return;
+  }
+  const dataset = prepareChartDataset(type, xColumn, yColumn);
+  if(type === 'scatter'){
+    if(!dataset.points.length){
+      destroyChart();
+      setChartState('empty', 'Not enough numeric data for the selected axes.');
+      return;
+    }
+  }else if(!dataset.values.length){
+    destroyChart();
+    setChartState('empty', 'Selected Y axis column does not contain numeric values.');
+    return;
+  }
+  const ctx = chartUI.canvas ? chartUI.canvas.getContext('2d') : null;
+  if(!ctx){
+    return;
+  }
+  destroyChart();
+  const config = buildChartConfig(type, dataset, xColumn, yColumn);
+  state.chart.instance = new Chart(ctx, config);
+  setChartState('content');
+}
+
 async function uploadCSV(file){
   if(!file) return;
   setBusy(true);
@@ -90,16 +604,29 @@ async function uploadCSV(file){
     state.pageSize = Math.max(1, Math.min(100, candidateSize));
     state.currentPage = 0;
     state.offset = 0;
+    if(chartUI.initialized){
+      const preservedType = chartUI.typeSelect ? (chartUI.typeSelect.value || state.chart.selected.type || 'line') : (state.chart.selected.type || 'line');
+      state.chart.fileId = null;
+      state.chart.allRows = null;
+      state.chart.numericColumns = [];
+      state.chart.selected = { type: preservedType, x: null, y: null };
+      clearChartControls();
+      setChartState('loading');
+    }
     renderColumnMenu();
     updateColumnToggleLabel();
     updateMetaChip();
     ensureTableVisible();
     renderTable();
     await loadPage(0, { showSpinner: false });
+    if(chartUI.initialized){
+      refreshCharts({ force: true }).catch(err => console.error(err));
+    }
     toast('CSV uploaded');
   }catch(err){
     console.error(err);
     toast('Upload failed');
+    resetChartState();
   }finally{
     setBusy(false);
   }
@@ -397,7 +924,6 @@ async function exportCSV(){
 }
 
 function exportPlaceholder(kind){
-  // Placeholder until charts module is wired up.
   toast(`${kind.toUpperCase()} export will be available soon`);
 }
 
@@ -406,7 +932,6 @@ function initImport(){
   $('#menuImport [data-import="csv"]').addEventListener('click', () => hiddenInput.click());
   hiddenInput.addEventListener('change', () => uploadCSV(hiddenInput.files[0]));
 
-  // Drag & drop
   const drop = $('#uploaderCard');
   const browse = $('#dropBrowse');
   if(browse){
@@ -455,6 +980,7 @@ function initYear(){
 
 window.addEventListener('DOMContentLoaded', () => {
   initMenus();
+  initCharts();
   initImport();
   initColumnsMenu();
   initExport();
@@ -464,6 +990,4 @@ window.addEventListener('DOMContentLoaded', () => {
   renderColumnMenu();
   updateColumnToggleLabel();
   updateMetaChip();
-  // For demo convenience
-  // fetch('/api/sample').then(r=>r.json()).then(d=>{ state.fileId=d.file_id; state.columns=d.columns; state.hiddenColumns=new Set(); state.rows=d.preview; state.rowsTotal=d.total_rows; ensureTableVisible(); renderColumnMenu(); updateColumnToggleLabel(); updateMetaChip(); renderTable(); });
 });

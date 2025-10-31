@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Datasetra — CSV Studio</title>
-    {% set STATIC_VERSION = "2024-10-25" %}
+    {% set STATIC_VERSION = "2024-11-01" %}
     <link rel="stylesheet" href="/static/css/styles.css?v={{ STATIC_VERSION }}" />
   </head>
   <body>
@@ -91,8 +91,36 @@
 
         <section id="charts" class="section" aria-labelledby="charts-title">
           <h2 id="charts-title">Charts</h2>
-          <div class="card placeholder" role="region" aria-label="Charts placeholder">
-            Charts placeholder — will render plots after charting module is connected.
+          <div id="chartsCard" class="card charts-card" role="region" aria-live="polite" aria-label="Charts">
+            <div id="chartsEmpty" class="charts-message">
+              <p>Upload a CSV file to explore charts.</p>
+            </div>
+            <div id="chartsLoading" class="charts-message" hidden>
+              <p>Loading chart data…</p>
+            </div>
+            <div id="chartsContent" class="charts-content" hidden>
+              <div class="charts-controls" role="group" aria-label="Chart settings">
+                <label>
+                  <span>Chart type</span>
+                  <select id="chartTypeSelect">
+                    <option value="line">Line</option>
+                    <option value="bar">Bar</option>
+                    <option value="scatter">Scatter</option>
+                  </select>
+                </label>
+                <label>
+                  <span>X axis</span>
+                  <select id="chartXSelect"></select>
+                </label>
+                <label>
+                  <span>Y axis</span>
+                  <select id="chartYSelect"></select>
+                </label>
+              </div>
+              <div class="charts-canvas-wrapper">
+                <canvas id="chartCanvas" aria-label="CSV chart" role="img"></canvas>
+              </div>
+            </div>
           </div>
         </section>
       </main>
@@ -109,6 +137,7 @@
       <div class="spinner" aria-label="Loading"></div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" defer></script>
     <script src="/static/js/app.js?v={{ STATIC_VERSION }}" defer></script>
   </body>
 </html>
