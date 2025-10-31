@@ -20,7 +20,7 @@ const state = {
     allRows: null,
     numericColumns: [],
     instance: null,
-    selected: { type: 'line', x: null, y: null },
+    selected: { type: 'line', x: null, y: [] },
     requestId: 0,
   },
 };
@@ -38,9 +38,19 @@ const chartUI = {
   content: null,
   typeSelect: null,
   xSelect: null,
-  ySelect: null,
+  yOptions: null,
   canvas: null,
 };
+
+const CHART_COLOR_PALETTE = [
+  '#00c2ff',
+  '#7f5cff',
+  '#75e1ff',
+  '#5cf29d',
+  '#f7b955',
+  '#ff8ccf',
+  '#4dd2ff',
+];
 
 function toast(msg, timeout=2400){
   const t = $('#toast');
@@ -100,7 +110,7 @@ function initCharts(){
   chartUI.content = $('#chartsContent');
   chartUI.typeSelect = $('#chartTypeSelect');
   chartUI.xSelect = $('#chartXSelect');
-  chartUI.ySelect = $('#chartYSelect');
+  chartUI.yOptions = $('#chartYOptions');
   chartUI.canvas = $('#chartCanvas');
   chartUI.emptyText = chartUI.empty ? chartUI.empty.querySelector('p') : null;
   if(chartUI.emptyText){
@@ -112,18 +122,22 @@ function initCharts(){
   if(chartUI.typeSelect){
     chartUI.typeSelect.addEventListener('change', () => {
       state.chart.selected.type = chartUI.typeSelect.value || 'line';
+      if(state.chart.selected.type === 'scatter' && chartUI.xSelect){
+        const currentX = chartUI.xSelect.value || null;
+        if(currentX && !state.chart.numericColumns.includes(currentX)){
+          const fallback = state.chart.numericColumns.find(col => state.columns.includes(col));
+          if(fallback){
+            chartUI.xSelect.value = fallback;
+            state.chart.selected.x = fallback;
+          }
+        }
+      }
       renderChartFromState();
     });
   }
   if(chartUI.xSelect){
     chartUI.xSelect.addEventListener('change', () => {
       state.chart.selected.x = chartUI.xSelect.value || null;
-      renderChartFromState();
-    });
-  }
-  if(chartUI.ySelect){
-    chartUI.ySelect.addEventListener('change', () => {
-      state.chart.selected.y = chartUI.ySelect.value || null;
       renderChartFromState();
     });
   }
@@ -175,9 +189,9 @@ function clearChartControls(){
     chartUI.xSelect.innerHTML = '';
     chartUI.xSelect.disabled = true;
   }
-  if(chartUI.ySelect){
-    chartUI.ySelect.innerHTML = '';
-    chartUI.ySelect.disabled = true;
+  if(chartUI.yOptions){
+    chartUI.yOptions.innerHTML = '';
+    chartUI.yOptions.classList.add('empty');
   }
 }
 
@@ -187,7 +201,7 @@ function resetChartState(){
   state.chart.fileId = null;
   state.chart.allRows = null;
   state.chart.numericColumns = [];
-  state.chart.selected = { type: 'line', x: null, y: null };
+  state.chart.selected = { type: 'line', x: null, y: [] };
   if(chartUI.typeSelect){
     chartUI.typeSelect.value = 'line';
   }
@@ -202,30 +216,46 @@ function populateChartControls(){
     chartUI.typeSelect.value = desiredType;
     state.chart.selected.type = chartUI.typeSelect.value || 'line';
   }
+
+  if(!Array.isArray(state.chart.selected.y)){
+    state.chart.selected.y = state.chart.selected.y ? [state.chart.selected.y] : [];
+  }
+  const numericSet = new Set(state.chart.numericColumns);
+  state.chart.selected.y = state.chart.selected.y.filter(col => numericSet.has(col));
+
+  if(state.chart.selected.x && !state.columns.includes(state.chart.selected.x)){
+    state.chart.selected.x = null;
+  }
+
   fillSelectOptions(chartUI.xSelect, state.columns, state.chart.selected.x);
-  fillSelectOptions(chartUI.ySelect, state.chart.numericColumns, state.chart.selected.y);
 
   if(chartUI.xSelect){
     chartUI.xSelect.disabled = !state.columns.length;
-    if(!chartUI.xSelect.disabled && !chartUI.xSelect.value && state.columns.length){
-      chartUI.xSelect.value = state.columns[0];
-    }
-  }
-  if(chartUI.ySelect){
-    chartUI.ySelect.disabled = !state.chart.numericColumns.length;
-    if(!chartUI.ySelect.disabled && !chartUI.ySelect.value && state.chart.numericColumns.length){
-      chartUI.ySelect.value = state.chart.numericColumns[0];
+    if(!chartUI.xSelect.disabled){
+      if(!chartUI.xSelect.value && state.columns.length){
+        chartUI.xSelect.value = state.columns[0];
+      }
+      state.chart.selected.x = chartUI.xSelect.value || null;
+      if(state.chart.selected.type === 'scatter' && state.chart.selected.x && !state.chart.numericColumns.includes(state.chart.selected.x)){
+        const fallback = state.chart.numericColumns.find(col => state.columns.includes(col));
+        if(fallback){
+          chartUI.xSelect.value = fallback;
+          state.chart.selected.x = fallback;
+        }
+      }else if(state.chart.selected.type !== 'scatter' && !state.chart.selected.x){
+        state.chart.selected.x = chartUI.xSelect.value || null;
+      }
+    }else{
+      state.chart.selected.x = null;
     }
   }
 
-  state.chart.selected.x = chartUI.xSelect && chartUI.xSelect.value ? chartUI.xSelect.value : null;
-  state.chart.selected.y = chartUI.ySelect && chartUI.ySelect.value ? chartUI.ySelect.value : null;
-  return chartUI.ySelect ? !chartUI.ySelect.disabled : false;
+  return renderYOptions();
 }
 
 function fillSelectOptions(selectEl, options, preferred){
   if(!selectEl) return;
-  const prev = preferred ?? selectEl.value;
+  const previous = preferred ?? selectEl.value ?? null;
   selectEl.innerHTML = '';
   options.forEach(option => {
     const opt = document.createElement('option');
@@ -233,12 +263,110 @@ function fillSelectOptions(selectEl, options, preferred){
     opt.textContent = option;
     selectEl.appendChild(opt);
   });
-  if(prev && options.includes(prev)){
-    selectEl.value = prev;
-  }else if(options.length){
-    selectEl.selectedIndex = 0;
-  }
+  const target = previous && options.includes(previous) ? previous : (options[0] ?? '');
+  selectEl.value = target;
   selectEl.disabled = !options.length;
+}
+
+function renderYOptions(){
+  if(!chartUI.yOptions) return false;
+  chartUI.yOptions.innerHTML = '';
+  chartUI.yOptions.classList.toggle('empty', !state.chart.numericColumns.length);
+  if(!state.chart.numericColumns.length){
+    const empty = document.createElement('div');
+    empty.className = 'charts-options-empty';
+    empty.textContent = 'No numeric columns detected';
+    chartUI.yOptions.appendChild(empty);
+    state.chart.selected.y = [];
+    return false;
+  }
+
+  const selection = new Set(state.chart.selected.y.filter(col => state.chart.numericColumns.includes(col)));
+  if(!selection.size && state.chart.numericColumns.length){
+    selection.add(state.chart.numericColumns[0]);
+  }
+  state.chart.selected.y = state.chart.numericColumns.filter(col => selection.has(col));
+
+  state.chart.numericColumns.forEach((column, idx) => {
+    const option = document.createElement('label');
+    option.className = 'charts-option';
+    option.dataset.column = column;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = column;
+    checkbox.checked = selection.has(column);
+
+    checkbox.addEventListener('change', () => handleYToggle(column, checkbox.checked, checkbox));
+    if(checkbox.checked){
+      option.classList.add('active');
+    }
+
+    const swatch = document.createElement('span');
+    swatch.className = 'charts-option-swatch';
+    swatch.style.backgroundColor = getSeriesColor(idx);
+
+    const label = document.createElement('span');
+    label.textContent = column;
+
+    option.append(checkbox, swatch, label);
+    chartUI.yOptions.appendChild(option);
+  });
+
+  updateYOptionActiveStates();
+  return state.chart.selected.y.length > 0;
+}
+
+function handleYToggle(column, checked, checkbox){
+  const next = new Set(state.chart.selected.y);
+  if(checked){
+    next.add(column);
+  }else{
+    next.delete(column);
+  }
+
+  if(!next.size){
+    next.add(column);
+    if(checkbox) checkbox.checked = true;
+    updateYOptionActiveStates();
+    toast('At least one Y column must stay selected');
+    return;
+  }
+
+  state.chart.selected.y = state.chart.numericColumns.filter(col => next.has(col));
+
+  updateYOptionActiveStates();
+  renderChartFromState();
+}
+
+function updateYOptionActiveStates(){
+  if(!chartUI.yOptions) return;
+  chartUI.yOptions.querySelectorAll('.charts-option').forEach(option => {
+    const input = option.querySelector('input[type="checkbox"]');
+    option.classList.toggle('active', Boolean(input && input.checked));
+  });
+}
+
+function getSeriesColor(index){
+  return CHART_COLOR_PALETTE[index % CHART_COLOR_PALETTE.length];
+}
+
+function hexToRgba(hex, alpha){
+  if(typeof hex !== 'string'){
+    return `rgba(0,0,0,${alpha})`;
+  }
+  let normalized = hex.replace('#', '').trim();
+  if(normalized.length === 3){
+    normalized = normalized.split('').map(ch => ch + ch).join('');
+  }
+  if(normalized.length !== 6){
+    return `rgba(0,0,0,${alpha})`;
+  }
+  const num = Number.parseInt(normalized, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function parseNumeric(value){
@@ -349,7 +477,13 @@ async function refreshCharts(options={}){
     renderChartFromState();
     return;
   }
-  const previousSelection = { ...state.chart.selected };
+  const previousSelection = {
+    type: state.chart.selected?.type || 'line',
+    x: state.chart.selected?.x ?? null,
+    y: Array.isArray(state.chart.selected?.y)
+      ? [...state.chart.selected.y]
+      : (state.chart.selected?.y ? [state.chart.selected.y] : [])
+  };
   clearChartControls();
   setChartState('loading');
   const requestId = ++state.chart.requestId;
@@ -374,7 +508,7 @@ async function refreshCharts(options={}){
     state.chart.selected = {
       type: previousSelection.type || (chartUI.typeSelect ? chartUI.typeSelect.value || 'line' : 'line'),
       x: previousSelection.x,
-      y: previousSelection.y
+      y: [...previousSelection.y]
     };
     const hasNumeric = populateChartControls();
     if(!hasNumeric){
@@ -393,62 +527,87 @@ async function refreshCharts(options={}){
   }
 }
 
-function prepareChartDataset(type, xColumn, yColumn){
+function prepareChartDatasets(type, xColumn, yColumns){
   const rows = state.chart.allRows || [];
+  if(!rows.length || !Array.isArray(yColumns) || !yColumns.length){
+    return null;
+  }
   if(type === 'scatter'){
-    const points = [];
-    for(let i = 0; i < rows.length && points.length < CHART_MAX_POINTS; i++){
-      const row = rows[i] || {};
-      const yVal = parseNumeric(row[yColumn]);
-      if(yVal === null) continue;
-      const xVal = xColumn ? parseNumeric(row[xColumn]) : parseNumeric(i + 1);
-      if(xVal === null) continue;
-      points.push({ x: xVal, y: yVal });
+    const datasets = yColumns.map(column => {
+      const points = [];
+      for(let i = 0; i < rows.length && points.length < CHART_MAX_POINTS; i++){
+        const row = rows[i] || {};
+        const yVal = parseNumeric(row[column]);
+        if(yVal === null) continue;
+        let xVal;
+        if(xColumn){
+          xVal = parseNumeric(row[xColumn]);
+          if(xVal === null) continue;
+        }else{
+          xVal = i + 1;
+        }
+        points.push({ x: xVal, y: yVal });
+      }
+      return points;
+    });
+    if(!datasets.some(points => points.length)){
+      return null;
     }
-    return { points };
+    return { scatter: datasets };
   }
   const labels = [];
-  const values = [];
-  for(let i = 0; i < rows.length && values.length < CHART_MAX_POINTS; i++){
+  const series = yColumns.map(() => []);
+  let accepted = 0;
+  for(let i = 0; i < rows.length && accepted < CHART_MAX_POINTS; i++){
     const row = rows[i] || {};
-    const yVal = parseNumeric(row[yColumn]);
-    if(yVal === null) continue;
+    const values = yColumns.map(column => parseNumeric(row[column]));
+    if(values.every(v => v === null)){
+      continue;
+    }
     let label;
     if(xColumn){
       const rawX = row[xColumn];
-      if(rawX === undefined || rawX === null){
-        label = `Row ${i + 1}`;
-      }else{
-        const str = String(rawX).trim();
-        label = str.length ? str : `Row ${i + 1}`;
-      }
+      const str = rawX !== undefined && rawX !== null ? String(rawX).trim() : '';
+      label = str.length ? str : `Row ${i + 1}`;
     }else{
       label = `Row ${i + 1}`;
     }
     labels.push(label);
-    values.push(yVal);
+    values.forEach((value, idx) => {
+      series[idx].push(value);
+    });
+    accepted += 1;
   }
-  return { labels, values };
+  if(!series.some(arr => arr.some(value => value !== null))){
+    return null;
+  }
+  return { labels, series };
 }
 
-function buildChartConfig(type, dataset, xLabel, yLabel){
-  const axisLabelX = xLabel || 'Row';
-  const axisLabelY = yLabel || 'Value';
+function buildChartConfig(type, prepared, xLabel, yColumns){
+  const axisLabelX = xLabel || 'Row #';
+  const axisLabelY = yColumns.length === 1 ? yColumns[0] : 'Values';
   const axisColor = '#9fb0cc';
   const gridColor = 'rgba(255,255,255,.06)';
   if(type === 'scatter'){
+    const datasets = yColumns
+      .map((column, idx) => {
+        const points = prepared.scatter?.[idx] || [];
+        if(!points.length) return null;
+        const color = getSeriesColor(idx);
+        return {
+          label: column,
+          data: points,
+          borderColor: color,
+          backgroundColor: hexToRgba(color, 0.35),
+          pointRadius: points.length > 150 ? 2 : 4,
+          pointHoverRadius: 6,
+        };
+      })
+      .filter(Boolean);
     return {
       type: 'scatter',
-      data: {
-        datasets: [{
-          label: `${axisLabelY} vs ${axisLabelX}`,
-          data: dataset.points,
-          borderColor: 'rgba(0,194,255,0.9)',
-          backgroundColor: 'rgba(0,194,255,0.35)',
-          pointRadius: dataset.points.length > 80 ? 2 : 4,
-          pointHoverRadius: 5
-        }]
-      },
+      data: { datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -460,7 +619,8 @@ function buildChartConfig(type, dataset, xLabel, yLabel){
             callbacks: {
               label: ctx => {
                 const { x, y } = ctx.parsed || {};
-                return `(${x}, ${y})`;
+                const name = ctx.dataset?.label ? `${ctx.dataset.label}: ` : '';
+                return `${name}(${x}, ${y})`;
               }
             }
           }
@@ -482,24 +642,36 @@ function buildChartConfig(type, dataset, xLabel, yLabel){
     };
   }
   const isBar = type === 'bar';
-  const datasetConfig = {
-    label: axisLabelY,
-    data: dataset.values,
-    borderColor: 'rgba(0,194,255,0.9)',
-    backgroundColor: isBar ? 'rgba(0,194,255,0.45)' : 'rgba(0,194,255,0.28)',
-    pointRadius: dataset.values.length > 120 ? 0 : 2,
-    pointHoverRadius: 4,
-    tension: isBar ? 0 : 0.25,
-    fill: false,
-  };
+  const datasets = yColumns.map((column, idx) => {
+    const data = prepared.series?.[idx] || [];
+    const color = getSeriesColor(idx);
+    return {
+      label: column,
+      data,
+      borderColor: color,
+      backgroundColor: isBar ? hexToRgba(color, 0.5) : hexToRgba(color, 0.28),
+      pointBackgroundColor: color,
+      pointBorderColor: '#0b1220',
+      pointRadius: data.length > 150 ? 0 : 3,
+      pointHoverRadius: 5,
+      spanGaps: true,
+      borderWidth: 2,
+      tension: isBar ? 0 : 0.25,
+      fill: false,
+    };
+  });
   if(isBar){
-    datasetConfig.borderRadius = 6;
+    datasets.forEach(ds => {
+      ds.borderWidth = 1.5;
+      ds.borderRadius = 6;
+      ds.maxBarThickness = 36;
+    });
   }
   return {
     type: isBar ? 'bar' : 'line',
     data: {
-      labels: dataset.labels,
-      datasets: [datasetConfig]
+      labels: prepared.labels,
+      datasets
     },
     options: {
       responsive: true,
@@ -511,8 +683,9 @@ function buildChartConfig(type, dataset, xLabel, yLabel){
         tooltip: {
           callbacks: {
             label: ctx => {
+              const label = ctx.dataset?.label || axisLabelY;
               const val = ctx.parsed?.y ?? ctx.parsed;
-              return `${axisLabelY}: ${val}`;
+              return `${label}: ${val}`;
             }
           }
         }
@@ -551,24 +724,34 @@ function renderChartFromState(){
     return;
   }
   const type = (chartUI.typeSelect && chartUI.typeSelect.value) || state.chart.selected.type || 'line';
-  const xColumn = chartUI.xSelect && chartUI.xSelect.value ? chartUI.xSelect.value : null;
-  const yColumn = chartUI.ySelect && chartUI.ySelect.value ? chartUI.ySelect.value : null;
-  state.chart.selected = { type, x: xColumn, y: yColumn };
-  if(!yColumn){
+  const xColumnRaw = chartUI.xSelect ? chartUI.xSelect.value : state.chart.selected.x;
+  const xColumn = xColumnRaw ? xColumnRaw : null;
+  const currentY = Array.isArray(state.chart.selected.y) ? state.chart.selected.y : [];
+  let yColumns = currentY.filter(col => state.chart.numericColumns.includes(col));
+  if(yColumns.length !== currentY.length){
+    state.chart.selected.y = yColumns;
+    renderYOptions();
+    yColumns = Array.isArray(state.chart.selected.y) ? [...state.chart.selected.y] : [];
+  }
+  if(!yColumns.length && state.chart.numericColumns.length){
+    state.chart.selected.y = [state.chart.numericColumns[0]];
+    renderYOptions();
+    yColumns = [...state.chart.selected.y];
+  }
+  state.chart.selected = { type, x: xColumn, y: yColumns };
+  if(!yColumns.length){
     destroyChart();
-    setChartState('empty', 'Select a numeric column for the Y axis.');
+    setChartState('empty', 'Select one or more numeric columns for the Y axis.');
     return;
   }
-  const dataset = prepareChartDataset(type, xColumn, yColumn);
-  if(type === 'scatter'){
-    if(!dataset.points.length){
-      destroyChart();
-      setChartState('empty', 'Not enough numeric data for the selected axes.');
-      return;
-    }
-  }else if(!dataset.values.length){
+  const prepared = prepareChartDatasets(type, xColumn, yColumns);
+  if(!prepared){
     destroyChart();
-    setChartState('empty', 'Selected Y axis column does not contain numeric values.');
+    const needsNumeric = type === 'scatter' && xColumn && !state.chart.numericColumns.includes(xColumn);
+    const message = needsNumeric
+      ? 'Scatter plots require numeric data on both axes.'
+      : 'Not enough numeric data for the selected columns.';
+    setChartState('empty', message);
     return;
   }
   const ctx = chartUI.canvas ? chartUI.canvas.getContext('2d') : null;
@@ -576,7 +759,11 @@ function renderChartFromState(){
     return;
   }
   destroyChart();
-  const config = buildChartConfig(type, dataset, xColumn, yColumn);
+  const config = buildChartConfig(type, prepared, xColumn, yColumns);
+  if(!config?.data?.datasets?.length){
+    setChartState('empty', 'Not enough numeric data for the selected columns.');
+    return;
+  }
   state.chart.instance = new Chart(ctx, config);
   setChartState('content');
 }
@@ -609,7 +796,7 @@ async function uploadCSV(file){
       state.chart.fileId = null;
       state.chart.allRows = null;
       state.chart.numericColumns = [];
-      state.chart.selected = { type: preservedType, x: null, y: null };
+      state.chart.selected = { type: preservedType, x: null, y: [] };
       clearChartControls();
       setChartState('loading');
     }
