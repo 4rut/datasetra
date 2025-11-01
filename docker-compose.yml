@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    image: datasetra:latest
+    ports:
+      - "8004:8004"
+    environment:
+      APP_MODULE: main:app
+      UVICORN_PORT: 8004
+    volumes:
+      - .:/app
